@@ -1,0 +1,17 @@
+= DESCRIPTION:
+
+Chef recipes I developed or copied while getting things set up under Rightscale and Chef
+
+Tested mainly under Ubuntu 10.04.
+
+= REQUIREMENTS:
+
+chef-solo or chef-server.  Tested under chef-solo with Vagrant and RightScale.
+
+= ATTRIBUTES:
+
+= USAGE:
+
+= AUTHORS:
+
+Dennis Watson
