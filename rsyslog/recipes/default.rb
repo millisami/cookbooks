@@ -2,7 +2,7 @@
 # Cookbook Name:: rsyslog
 # Recipe:: default
 #
-# Copyright 2009, Opscode, Inc.
+# Copyright 2009-2011, Opscode, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,11 +17,24 @@
 # limitations under the License.
 #
 
+if platform?("ubuntu") && node['platform_version'].to_f == 8.04
+  apt_repository "hardy-rsyslog-ppa" do
+    uri "http://ppa.launchpad.net/a.bono/rsyslog/ubuntu"
+    distribution "hardy"
+    components ["main"]
+    keyserver "keyserver.ubuntu.com"
+    key "C0061A4A"
+    action :add
+    notifies :run, "execute[apt-get update]", :immediately
+  end
+end
+
 package "rsyslog" do
   action :install
 end
 
 service "rsyslog" do
+  service_name "rsyslogd" if platform?("arch")
   supports :restart => true, :reload => true
   action [:enable, :start]
 end
@@ -44,18 +57,15 @@ template "/etc/rsyslog.conf" do
   owner "root"
   group "root"
   mode 0644
-  notifies :restart, resources(:service => "rsyslog"), :delayed
+  notifies :restart, "service[rsyslog]"
 end
 
-case node[:platform]
-when "ubuntu"
-  if node[:platform_version].to_f >= 9.10
-    template "/etc/rsyslog.d/50-default.conf" do
-      source "50-default.conf.erb"
-      backup false
-      owner "root"
-      group "root"
-      mode 0644
-    end
+if platform?("ubuntu")
+  template "/etc/rsyslog.d/50-default.conf" do
+    source "50-default.conf.erb"
+    backup false
+    owner "root"
+    group "root"
+    mode 0644
   end
 end

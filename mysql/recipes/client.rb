@@ -2,7 +2,7 @@
 # Cookbook Name:: mysql
 # Recipe:: client
 #
-# Copyright 2008-2009, Opscode, Inc.
+# Copyright 2008-2011, Opscode, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,49 +17,37 @@
 # limitations under the License.
 #
 
-p = package "mysql-devel" do
-  package_name value_for_platform(
-    [ "centos", "redhat", "suse", "fedora"] => { "default" => "mysql-devel" },
-    "debian" => {
-      "5.0" => "libmysqlclient15-dev",
-      "5.0.1" => "libmysqlclient15-dev",
-      "5.0.2" => "libmysqlclient15-dev",
-      "5.0.3" => "libmysqlclient15-dev",
-      "5.0.4" => "libmysqlclient15-dev",
-      "5.0.5" => "libmysqlclient15-dev"
-    },
-    "ubuntu" => {
-      "8.04" => "libmysqlclient15-dev",
-      "8.10" => "libmysqlclient15-dev",
-      "9.04" => "libmysqlclient15-dev"
-    },
-    "default" => 'libmysqlclient-dev'
-  )
-  action :nothing
+# Include Opscode helper in Recipe class to get access
+# to debian_before_squeeze? and ubuntu_before_lucid?
+::Chef::Recipe.send(:include, Opscode::Mysql::Helpers)
+
+mysql_packages = case node['platform']
+when "centos", "redhat", "suse", "fedora", "scientific", "amazon"
+  %w{mysql mysql-devel}
+when "ubuntu","debian"
+  if debian_before_squeeze? || ubuntu_before_lucid?
+    %w{mysql-client libmysqlclient15-dev}
+  else
+    %w{mysql-client libmysqlclient-dev}
+  end
+when "freebsd"
+  %w{mysql55-client}
+else
+  %w{mysql-client libmysqlclient-dev}
 end
 
-p.run_action(:install)
-
-o = package "mysql-client" do
-  package_name value_for_platform(
-    [ "centos", "redhat", "suse", "fedora"] => { "default" => "mysql" },
-    "default" => "mysql-client"
-  )
-  action :nothing
-end
-
-o.run_action(:install)
-
-case node[:platform]
-when "centos","redhat", "suse", "fedora"
-  package "ruby-mysql" do
+mysql_packages.each do |mysql_pack|
+  package mysql_pack do
     action :install
   end
+end
 
+if platform?(%w{ redhat centos fedora suse scientific amazon })
+  package 'ruby-mysql'
+elsif platform?(%w{ debian ubuntu })
+  package "libmysql-ruby"
 else
-  r = gem_package "mysql" do
-    action :nothing
+  gem_package "mysql" do
+    action :install
   end
-
-  r.run_action(:install)
 end

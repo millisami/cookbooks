@@ -22,20 +22,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-include_recipe "packages"
-include_recipe "ruby"
 include_recipe "apache2"
+include_recipe "build-essential"
 
 if platform?("centos","redhat")
-  if dist_only?
-    # just the gem, we'll install the apache module within apache2
-    package "rubygem-passenger"
-    return
+  package "httpd-devel"
+  if node['platform_version'].to_f < 6.0
+    package 'curl-devel'
   else
-    package "httpd-devel"
+    package 'libcurl-devel'
+    package 'openssl-devel'
+    package 'zlib-devel'
   end
 else
-  %w{ apache2-prefork-dev libapr1-dev }.each do |pkg|
+  %w{ apache2-prefork-dev libapr1-dev libcurl4-gnutls-dev }.each do |pkg|
     package pkg do
       action :upgrade
     end
@@ -47,6 +47,6 @@ gem_package "passenger" do
 end
 
 execute "passenger_module" do
-  command 'echo -en "\n\n\n\n" | passenger-install-apache2-module'
+  command 'passenger-install-apache2-module --auto'
   creates node[:passenger][:module_path]
 end

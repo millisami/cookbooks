@@ -24,31 +24,15 @@
 
 include_recipe "passenger_apache2"
 
-if platform?("centos","redhat") and dist_only?
-  package "mod_passenger" do
-    notifies :run, resources(:execute => "generate-module-list"), :immediately
-  end
-
-  file "#{node[:apache][:dir]}/conf.d/mod_passenger.conf" do
-    action :delete
-    backup false 
-  end
-else  
-  template "#{node[:apache][:dir]}/mods-available/passenger.load" do
-    cookbook "passenger_apache2"
-    source "passenger.load.erb"
-    owner "root"
-    group "root"
-    mode 0755
-  end
-end
 
 template "#{node[:apache][:dir]}/mods-available/passenger.conf" do
   cookbook "passenger_apache2"
   source "passenger.conf.erb"
   owner "root"
   group "root"
-  mode 0755
+  mode "644"
 end
 
-apache_module "passenger"
+apache_module "passenger" do
+  module_path node[:passenger][:module_path]
+end

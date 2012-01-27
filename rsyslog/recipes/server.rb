@@ -2,7 +2,7 @@
 # Cookbook Name:: rsyslog
 # Recipe:: server
 #
-# Copyright 2009, Opscode, Inc.
+# Copyright 2009-2011, Opscode, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,35 +20,38 @@
 include_recipe "cron"
 include_recipe "rsyslog"
 
-node.set[:rsyslog][:server] = true
+node.set['rsyslog']['server'] = true
+node.save unless Chef::Config[:solo]
 
-directory node[:rsyslog][:log_dir] do
+directory node['rsyslog']['log_dir'] do
   owner "root"
   group "root"
+  recursive true
   mode 0755
 end
 
 template "/etc/rsyslog.d/server.conf" do
   source "server.conf.erb"
   backup false
-  variables :log_dir => node[:rsyslog][:log_dir], :protocol => node[:rsyslog][:protocol]
+  variables(
+    :log_dir => node['rsyslog']['log_dir'],
+    :protocol => node['rsyslog']['protocol']
+  )
   owner "root"
   group "root"
   mode 0644
-  notifies :restart, resources(:service => "rsyslog"), :delayed
+  notifies :restart, "service[rsyslog]"
 end
 
 file "/etc/rsyslog.d/remote.conf" do
   action :delete
   backup false
-  notifies :reload, resources(:service => "rsyslog"), :delayed
-  only_if do File.exists?("/etc/rsyslog.d/remote.conf") end
+  notifies :reload, "service[rsyslog]"
+  only_if do ::File.exists?("/etc/rsyslog.d/remote.conf") end
 end
 
-template "/etc/cron.d/rsyslog_gz" do
-  source "rsyslog_gz.erb"
-  owner "root"
-  group "root"
-  mode 0644
-  variables :log_dir => node[:rsyslog][:log_dir]
+cron "rsyslog_gz" do
+  command "find #{node['rsyslog']['log_dir']}/$(date +\\%Y) -type f -mtime +1 -exec gzip -q {} \\;"
+  minute "0"
+  hour "4"
 end

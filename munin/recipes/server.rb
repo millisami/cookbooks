@@ -2,7 +2,7 @@
 # Cookbook Name:: munin
 # Recipe:: server
 #
-# Copyright 2010, Opscode, Inc.
+# Copyright 2010-2011, Opscode, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,39 +16,83 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+node['apache']['default_modules'] << 'expires' if platform?("redhat", "centos", "scientific", "fedora")
 
 include_recipe "apache2"
-include_recipe "apache2::mod_auth_openid"
 include_recipe "apache2::mod_rewrite"
 include_recipe "munin::client"
 
-package "munin"
-
-cookbook_file "/etc/cron.d/munin" do
-  source "munin-cron"
-  mode "0644"
-  owner "root"
-  group "root"
-  backup 0
+sysadmins = search(:users, 'groups:sysadmin')
+munin_servers = search(:node, "munin:[* TO *] AND chef_environment:#{node.chef_environment}")
+if munin_servers.empty?
+  Chef::Log.info("No nodes returned from search, using this node so munin configuration has data")
+  munin_servers = Array.new
+  munin_servers << node
 end
 
-munin_servers = search(:node, "hostname:[* TO *] AND role:#{node[:app_environment]}")
+munin_servers.sort! { |a,b| a[:fqdn] <=> b[:fqdn] }
 
 if node[:public_domain]
-  case node[:app_environment]
+  case node.chef_environment
   when "production"
     public_domain = node[:public_domain]
   else
-    public_domain = "#{node[:app_environment]}.#{node[:public_domain]}"
+    public_domain = "#{node.chef_environment}.#{node[:public_domain]}"
   end
 else
   public_domain = node[:domain]
 end
 
-template "/etc/munin/munin.conf" do
+case node[:platform]
+when "freebsd"
+  package "munin-master"
+else
+  package "munin"
+end
+
+case node[:platform]
+when "arch"
+  cron "munin-graph-html" do
+    command "/usr/bin/munin-cron"
+    user "munin"
+    minute "*/5"
+  end
+when "freebsd"
+  cron "munin-graph-html" do
+    command "/usr/local/bin/munin-cron"
+    user "munin"
+    minute "*/5"
+    ignore_failure true
+  end
+else
+  cookbook_file "/etc/cron.d/munin" do
+    source "munin-cron"
+    mode "0644"
+    owner "root"
+    group node['munin']['root']['group']
+    backup 0
+  end
+end
+
+template "#{node['munin']['basedir']}/munin.conf" do
   source "munin.conf.erb"
   mode 0644
-  variables(:munin_nodes => munin_servers)
+  variables(:munin_nodes => munin_servers, :docroot => node['munin']['docroot'])
+end
+
+case node['munin']['server_auth_method']
+when "openid"
+  include_recipe "apache2::mod_auth_openid"
+else
+  template "#{node['munin']['basedir']}/htpasswd.users" do
+    source "htpasswd.users.erb"
+    owner "munin"
+    group node['apache']['group']
+    mode 0640
+    variables(
+      :sysadmins => sysadmins
+    )
+  end
 end
 
 apache_site "000-default" do
@@ -58,13 +102,13 @@ end
 template "#{node[:apache][:dir]}/sites-available/munin.conf" do
   source "apache2.conf.erb"
   mode 0644
-  variables :public_domain => public_domain
-  if File.symlink?("#{node[:apache][:dir]}/sites-enabled/munin.conf")
+  variables(:public_domain => public_domain, :docroot => node['munin']['docroot'])
+  if ::File.symlink?("#{node[:apache][:dir]}/sites-enabled/munin.conf")
     notifies :reload, resources(:service => "apache2")
   end
 end
 
-directory "/var/www/munin" do
+directory node['munin']['docroot'] do
   owner "munin"
   group "munin"
   mode 0755

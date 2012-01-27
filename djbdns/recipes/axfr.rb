@@ -31,11 +31,29 @@ user "axfrdns" do
   end
   shell "/bin/false"
   home "/home/axfrdns"
-  system true
 end
 
-execute "#{node[:djbdns][:bin_dir]}/axfrdns-conf axfrdns dnslog #{node[:runit][:sv_dir]}/axfrdns #{node[:runit][:sv_dir]}/tinydns #{node[:djbdns][:axfrdns_ipaddress]}" do
-  only_if "/usr/bin/test ! -d #{node[:runit][:sv_dir]}/axfrdns"
+execute "#{node[:djbdns][:bin_dir]}/axfrdns-conf axfrdns dnslog #{node[:djbdns][:axfrdns_dir]} #{node[:djbdns][:tinydns_dir]} #{node[:djbdns][:axfrdns_ipaddress]}" do
+  not_if { ::File.directory?(node[:djbdns][:axfrdns_dir]) }
 end
 
-runit_service "axfrdns"
+case node[:djbdns][:service_type]
+when "runit"
+  link "#{node[:runit][:sv_dir]}/axfrdns" do
+    to node[:djbdns][:axfrdns_dir]
+  end
+  runit_service "axfrdns"
+when "bluepill"
+  template "#{node['bluepill']['conf_dir']}/axfrdns.pill" do
+    source "axfrdns.pill.erb"
+    mode 0644
+  end  bluepill_service "axfrdns" do
+    action [:enable,:load,:start]
+  end
+when "daemontools"
+  daemontools_service "axfrdns" do
+    directory node[:djbdns][:axfrdns_dir]
+    template false
+    action [:enable,:start]
+  end
+end

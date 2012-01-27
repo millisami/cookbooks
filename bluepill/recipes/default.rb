@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+gem_package "i18n"
 gem_package "bluepill"
 
 [
@@ -25,7 +26,8 @@ gem_package "bluepill"
   node["bluepill"]["state_dir"]
 ].each do |dir|
   directory dir do
+    recursive true
     owner "root"
-    group "root"
+    group node["bluepill"]["group"]
   end
 end

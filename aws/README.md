@@ -5,8 +5,8 @@ This cookbook provides libraries, resources and providers to configure and manag
 
 * EBS Volumes (`ebs_volume`)
 * Elastic IPs (`elastic_ip`)
+* Elastic Load Balancer (`elastic_lb`)
 
----
 Requirements
 ============
 
@@ -14,7 +14,6 @@ Requires Chef 0.7.10 or higher for Lightweight Resource and Provider support. Ch
 
 An Amazon Web Services account is required. The Access Key and Secret Access Key are used to authenticate with EC2.
 
----
 AWS Credentials
 ===============
 
@@ -40,7 +39,6 @@ And to access the values:
 
 We'll look at specific usage below.
 
----
 Recipes
 =======
 
@@ -55,7 +53,6 @@ The default recipe installs the `right_aws` RubyGem, which this cookbook require
 
 The `gem_package` is created as a Ruby Object and thus installed during the Compile Phase of the Chef run.
 
----
 Libraries
 =========
 
@@ -65,13 +62,12 @@ The cookbook has a library module, `Opscode::AWS::Ec2`, which can be included wh
 
 This is needed in any providers in the cookbook. Along with some helper methods used in the providers, it sets up a class variable, `ec2` that is used along with the access and secret access keys
 
----
 Resources and Providers
 =======================
 
 This cookbook provides two resources and corresponding providers.
 
-ebs_volume.rb
+`ebs_volume.rb`
 -------------
 
 Manage Elastic Block Store (EBS) volumes with this resource.
@@ -94,8 +90,9 @@ Attribute Parameters:
 * `volume_id` - specify an ID to attach, cannot be used with action `:create` because AWS assigns new volume IDs
 * `timeout` - connection timeout for EC2 API.
 * `snapshots_to_keep` - used with action `:prune` for number of snapshots to maintain.
+* `description` - used to set the description of an EBS snapshot
 
-elastic_ip.rb
+`elastic_ip.rb`
 -------------
 
 Actions:
@@ -109,8 +106,19 @@ Attribute Parameters:
 * `ip` - the IP address.
 * `timeout` - connection timeout for EC2 API.
 
+`elastic_lb.rb`
+-------------
 
----
+Actions:
+
+* `register` - Add this instance to the LB
+* `deregister` - Remove this instance from the LB
+
+Attribute Parameters:
+
+* `aws_secret_access_key`, `aws_access_key` - passed to `Opscode::AWS:Ec2` to authenticate, required.
+* `name` - the name of the LB, required.
+
 Usage
 =====
 
@@ -126,7 +134,7 @@ The resource only handles manipulating the EBS volume, additional resources need
 
     aws_ebs_volume "db_ebs_volume" do
       aws_access_key aws['aws_access_key_id']
-      aws_secret_access_key aws['aws_secret_access_key_id']
+      aws_secret_access_key aws['aws_secret_access_key']
       size 50
       device "/dev/sdi"
       action [ :create, :attach ]
@@ -136,7 +144,7 @@ This will create a 50G volume, attach it to the instance as `/dev/sdi`.
 
     aws_ebs_volume "db_ebs_volume_from_snapshot" do
       aws_access_key aws['aws_access_key_id']
-      aws_secret_access_key aws['aws_secret_access_key_id']
+      aws_secret_access_key aws['aws_secret_access_key']
       size 50
       device "/dev/sdi"
       snapshot_id "snap-ABCDEFGH"
@@ -164,8 +172,8 @@ Then to set up the Elastic IP on a system:
 
     aws_elastic_ip "eip_load_balancer_production" do
       aws_access_key aws['aws_access_key_id']
-      aws_secret_access_key aws['aws_secret_access_key_id']
-      lb ip_info['public_ip']
+      aws_secret_access_key aws['aws_secret_access_key']
+      ip ip_info['public_ip']
       action :associate
     end
 
@@ -173,12 +181,26 @@ This will use the loaded `aws` and `ip_info` databags to pass the required value
 
 You can also store this in a role as an attribute or assign to the node directly, if preferred.
 
----
+aws_elastic_lb
+---------
+
+`elastic_lb` opererates similar to `elastic_ip'.  Make sure that you've created the ELB and enabled your instances' availability zones prior to using this provider.
+
+For example, to register the node in the 'QA' ELB:
+    aws_elastic_lb "elb_qa" do
+      aws_access_key aws['aws_access_key_id']
+      aws_secret_access_key aws['aws_secret_access_key']
+      name "QA"
+      action :register
+    end
+
+
 License and Author
 ==================
 
 Author:: Chris Walters (<cw@opscode.com>)
 Author:: AJ Christensen (<aj@opscode.com>)
+Author:: Justin Huff (<jjhuff@mspin.net>)
 
 Copyright 2009-2010, Opscode, Inc.
 
@@ -193,3 +215,15 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+Changes
+=======
+
+## v0.99.1
+
+* [COOK-530] - aws cookbook doesn't save attributes with chef 0.10.RC.0
+* [COOK-600] - In AWS Cookbook specifying just the device doesn't work
+* [COOK-601] - in aws cookbook :prune action keeps 1 less snapshot than snapshots_to_keep
+* [COOK-610] - Create Snapshot action in aws cookbook should allow description attribute
+* [COOK-819] - fix documentation bug in aws readme
+* [COOK-829] - AWS cookbook does not work with most recent right_aws gem but no version is locked in the recipe

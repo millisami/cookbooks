@@ -2,7 +2,7 @@
 # Cookbook Name:: mysql
 # Recipe:: default
 #
-# Copyright 2008-2009, Opscode, Inc.
+# Copyright 2008-2011, Opscode, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,14 +17,20 @@
 # limitations under the License.
 #
 
+::Chef::Recipe.send(:include, Opscode::OpenSSL::Password)
+
 include_recipe "mysql::client"
 
-case node[:platform]
-when "debian","ubuntu"
+# generate all passwords
+node.set_unless['mysql']['server_debian_password'] = secure_password
+node.set_unless['mysql']['server_root_password']   = secure_password
+node.set_unless['mysql']['server_repl_password']   = secure_password
+
+if platform?(%w{debian ubuntu})
 
   directory "/var/cache/local/preseeding" do
     owner "root"
-    group "root"
+    group node['mysql']['root_group']
     mode 0755
     recursive true
   end
@@ -37,24 +43,33 @@ when "debian","ubuntu"
   template "/var/cache/local/preseeding/mysql-server.seed" do
     source "mysql-server.seed.erb"
     owner "root"
-    group "root"
+    group node['mysql']['root_group']
     mode "0600"
     notifies :run, resources(:execute => "preseed mysql-server"), :immediately
   end
-  template "/etc/mysql/debian.cnf" do
+
+  template "#{node['mysql']['conf_dir']}/debian.cnf" do
     source "debian.cnf.erb"
     owner "root"
-    group "root"
+    group node['mysql']['root_group']
     mode "0600"
   end
+
 end
 
-package "mysql-server" do
+package node['mysql']['package_name'] do
   action :install
 end
 
+directory "#{node['mysql']['conf_dir']}/mysql/conf.d" do
+  owner "mysql"
+  group "mysql"
+  action :create
+  recursive true
+end
+
 service "mysql" do
-  service_name value_for_platform([ "centos", "redhat", "suse", "fedora" ] => {"default" => "mysqld"}, "default" => "mysql")
+  service_name node['mysql']['service_name']
   if (platform?("ubuntu") && node.platform_version.to_f >= 10.04)
     restart_command "restart mysql"
     stop_command "stop mysql"
@@ -64,12 +79,22 @@ service "mysql" do
   action :nothing
 end
 
-template value_for_platform([ "centos", "redhat", "suse" , "fedora" ] => {"default" => "/etc/my.cnf"}, "default" => "/etc/mysql/my.cnf") do
+skip_federated = case node['platform']
+                 when 'fedora', 'ubuntu', 'amazon'
+                   true
+                 when 'centos', 'redhat', 'scientific'
+                   node['platform_version'].to_f < 6.0
+                 else
+                   false
+                 end
+
+template "#{node['mysql']['conf_dir']}/my.cnf" do
   source "my.cnf.erb"
   owner "root"
-  group "root"
+  group node['mysql']['root_group']
   mode "0644"
   notifies :restart, resources(:service => "mysql"), :immediately
+  variables :skip_federated => skip_federated
 end
 
 unless Chef::Config[:solo]
@@ -81,29 +106,35 @@ unless Chef::Config[:solo]
   end
 end
 
-grants_path = value_for_platform(
-  ["centos", "redhat", "suse", "fedora" ] => {
-    "default" => "/etc/mysql_grants.sql"
-  },
-  "default" => "/etc/mysql/grants.sql"
-)
+# set the root password on platforms 
+# that don't support pre-seeding
+unless platform?(%w{debian ubuntu})
+
+  execute "assign-root-password" do
+    command "#{node['mysql']['mysqladmin_bin']} -u root password \"#{node['mysql']['server_root_password']}\""
+    action :run
+    only_if "#{node['mysql']['mysql_bin']} -u root -e 'show databases;'"
+  end
+
+end
+
+grants_path = node['mysql']['grants_path']
 
 begin
-  t = resources(:template => "/etc/mysql/grants.sql")
+  t = resources("template[#{grants_path}]")
 rescue
-  Chef::Log.warn("Could not find previously defined grants.sql resource")
-  t = template "/etc/mysql/grants.sql" do
-    path grants_path
+  Chef::Log.info("Could not find previously defined grants.sql resource")
+  t = template grants_path do
     source "grants.sql.erb"
     owner "root"
-    group "root"
+    group node['mysql']['root_group']
     mode "0600"
     action :create
   end
 end
 
 execute "mysql-install-privileges" do
-  command "/usr/bin/mysql -u root #{node[:mysql][:server_root_password].empty? ? '' : '-p' }#{node[:mysql][:server_root_password]} < #{grants_path}"
+  command "#{node['mysql']['mysql_bin']} -u root #{node['mysql']['server_root_password'].empty? ? '' : '-p' }\"#{node['mysql']['server_root_password']}\" < #{grants_path}"
   action :nothing
-  subscribes :run, resources(:template => "/etc/mysql/grants.sql"), :immediately
+  subscribes :run, resources("template[#{grants_path}]"), :immediately
 end
